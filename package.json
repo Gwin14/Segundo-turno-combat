@@ -1,0 +1,17 @@
+{
+  "name": "segundo-turno",
+  "version": "1.0.0",
+  "description": "Jogo de luta multiplayer online no navegador: Lula vs Flávio",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "art": "tools/aseprite-mcp/.venv/bin/python art/characters.py && tools/aseprite-mcp/.venv/bin/python art/scenery.py"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  }
+}

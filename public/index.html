@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Segundo Turno</title>
+  <meta name="description" content="Jogo de luta multiplayer online no navegador: Lula vs Flávio.">
+  <link rel="icon" href="/assets/lula_portrait.png">
+  <link rel="preload" href="/fonts/press-start-2p.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="stage">
+    <canvas id="game" width="480" height="270"></canvas>
+
+    <div id="ui">
+      <section id="scr-loading" class="screen active">
+        <p class="blink">CARREGANDO...</p>
+      </section>
+
+      <section id="scr-title" class="screen">
+        <div class="logo">
+          <div class="logo-top">SEGUNDO</div>
+          <div class="logo-main">TURNO</div>
+          <div class="logo-sub">O EMBATE FINAL</div>
+        </div>
+        <div class="menu">
+          <button id="btn-joinlink" class="btn hot hidden">ENTRAR NA SALA</button>
+          <button id="btn-online" class="btn">JOGAR ONLINE</button>
+          <button id="btn-cpu" class="btn">TREINO VS CPU</button>
+          <button id="btn-help" class="btn ghost">CONTROLES</button>
+        </div>
+        <p class="foot">Paródia de luta. Os dois lutam com as mesmas forças.</p>
+      </section>
+
+      <section id="scr-select" class="screen">
+        <h2 id="select-title">ESCOLHA SEU LUTADOR</h2>
+        <div class="cards">
+          <button class="card" data-char="lula">
+            <canvas width="96" height="80"></canvas>
+            <span class="name">LULA</span>
+            <span class="spec">Especial: Picanha voadora</span>
+          </button>
+          <button class="card" data-char="flavio">
+            <canvas width="96" height="80"></canvas>
+            <span class="name">FLÁVIO</span>
+            <span class="spec">Especial: Bolada da seleção</span>
+          </button>
+        </div>
+
+        <div id="cpu-opts" class="row">
+          <span>CPU:</span>
+          <button class="chip" data-level="facil">FÁCIL</button>
+          <button class="chip on" data-level="normal">NORMAL</button>
+          <button class="chip" data-level="dificil">DIFÍCIL</button>
+        </div>
+        <div id="cpu-actions" class="row">
+          <button id="btn-cpu-go" class="btn hot">LUTAR!</button>
+          <button class="btn ghost back">VOLTAR</button>
+        </div>
+
+        <div id="online-actions">
+          <div class="row">
+            <button id="btn-create" class="btn hot">CRIAR SALA</button>
+            <button id="btn-quick" class="btn">PARTIDA RÁPIDA</button>
+          </div>
+          <div class="row">
+            <input id="code-in" maxlength="4" placeholder="CÓDIGO" autocomplete="off" spellcheck="false">
+            <button id="btn-join" class="btn">ENTRAR</button>
+            <button class="btn ghost back">VOLTAR</button>
+          </div>
+          <p class="hint">Quem entra numa sala fica com o lutador que sobrou: nunca repete.</p>
+        </div>
+      </section>
+
+      <section id="scr-wait" class="screen">
+        <h2>SALA <span id="room-code" class="code">----</span></h2>
+        <p>Você é <b id="wait-you">LULA</b>. Mande o link para o oponente:</p>
+        <div class="row">
+          <input id="room-link" readonly>
+          <button id="btn-copy" class="btn">COPIAR</button>
+        </div>
+        <p class="blink">AGUARDANDO OPONENTE...</p>
+        <button class="btn ghost cancel">CANCELAR</button>
+      </section>
+
+      <section id="scr-queue" class="screen">
+        <h2>PARTIDA RÁPIDA</h2>
+        <p class="blink">PROCURANDO OPONENTE...</p>
+        <button class="btn ghost cancel">CANCELAR</button>
+      </section>
+
+      <section id="scr-pause" class="screen dim">
+        <h2>PAUSA</h2>
+        <button id="btn-resume" class="btn hot">CONTINUAR</button>
+        <button class="btn ghost quit">SAIR</button>
+      </section>
+
+      <section id="scr-end" class="screen bottom">
+        <p id="end-status" class="status"></p>
+        <div class="row">
+          <button id="btn-rematch" class="btn hot">REVANCHE</button>
+          <button class="btn ghost quit">MENU</button>
+        </div>
+      </section>
+
+      <section id="scr-msg" class="screen dim">
+        <h2 id="msg-title">AVISO</h2>
+        <p id="msg-text"></p>
+        <button id="btn-msg-ok" class="btn">OK</button>
+      </section>
+
+      <section id="scr-help" class="screen dim">
+        <h2>CONTROLES</h2>
+        <table class="keys">
+          <tr><td>Andar</td><td>← → ou A D</td></tr>
+          <tr><td>Pular</td><td>↑ / W / Espaço</td></tr>
+          <tr><td>Agachar</td><td>↓ / S</td></tr>
+          <tr><td>Defender</td><td>segurar para trás</td></tr>
+          <tr><td>Soco</td><td>J ou Z</td></tr>
+          <tr><td>Chute</td><td>K ou X</td></tr>
+          <tr><td>Especial</td><td>L ou C</td></tr>
+          <tr><td>Pausa / Som</td><td>Esc / M</td></tr>
+        </table>
+        <p class="hint">Agachado + soco/chute = golpe baixo. Golpe no ar = voadora.<br>Agache para desviar dos projéteis. Gamepad e toque também funcionam.</p>
+        <button class="btn ghost back-title">VOLTAR</button>
+      </section>
+    </div>
+
+    <div id="touch">
+      <div class="dpad">
+        <div data-key="UL"></div><div data-key="U" class="arrow">▲</div><div data-key="UR"></div>
+        <div data-key="L" class="arrow">◀</div><div></div><div data-key="R" class="arrow">▶</div>
+        <div data-key="DL"></div><div data-key="D" class="arrow">▼</div><div data-key="DR"></div>
+      </div>
+      <div class="abtns">
+        <div data-key="P" class="ab p">SOCO</div>
+        <div data-key="K" class="ab k">CHUTE</div>
+        <div data-key="S" class="ab s">ESP</div>
+      </div>
+    </div>
+
+    <button id="btn-mute" title="Som (M)">♪</button>
+    <button id="btn-menu" class="hidden" title="Pausa (Esc)">II</button>
+  </div>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
