@@ -3,8 +3,7 @@
 import { MOVES, MAX_HP, ROUND_TIME, VS_TICKS, CHAR_NAMES, BTN } from "/shared/sim.js";
 import { sfx, announce, playMusic, setCrowd } from "./audio.js";
 
-export const VW = 480;
-export const VH = 270;
+const VH = 270; // scene height; the width (this.vw) follows the screen
 const GROUND = 240;
 const FONT = "'Press Start 2P', monospace";
 const FX = { hit: [0, 4], block: [4, 3], dust: [7, 4], super: [11, 4] };
@@ -31,7 +30,17 @@ export class Renderer {
     this.ctx = canvas.getContext("2d");
     this.A = assets;
     this.white = { lula: whiteVersion(assets.lula), flavio: whiteVersion(assets.flavio) };
+    this.resize(canvas.width, canvas.height);
     this.reset();
+  }
+
+  // On screens taller than the scene, the scene sits near the top and the
+  // rest is a panel behind the touch controls.
+  resize(w, h) {
+    this.vw = w;
+    this.vh = h;
+    const touch = document.documentElement.classList.contains("touch");
+    this.top = h > VH ? Math.round((h - VH) * (touch ? 0.35 : 0.5)) : 0;
   }
 
   reset() {
@@ -298,10 +307,22 @@ export class Renderer {
   // ---------------------------------------------------------------- draw
   draw(v, dt, opts = {}) {
     const ctx = this.ctx;
+    const VW = this.vw;
     this.time += dt;
     const steps = dt * 60;
     ctx.imageSmoothingEnabled = false;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (this.vh > VH) {
+      ctx.fillStyle = "#15123a";
+      ctx.fillRect(0, 0, VW, this.top);
+      const g = ctx.createLinearGradient(0, this.top + VH, 0, this.vh);
+      g.addColorStop(0, "#5a3446");
+      g.addColorStop(0.08, "#2a1830");
+      g.addColorStop(1, "#0b0612");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, this.top + VH, VW, this.vh - this.top - VH);
+      ctx.translate(0, this.top);
+    }
 
     // camera
     const mid = (v.f[0].x + v.f[1].x) / 2;
@@ -315,9 +336,12 @@ export class Renderer {
     const viewX = Math.round(this.camX);
 
     ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, VW, VH);
+    ctx.clip();
     // zoom around the focus point near the ground
     if (this.zoom > 1.001) {
-      const fx = clamp(this.zoomFocus - viewX, 120, 360);
+      const fx = clamp(this.zoomFocus - viewX, VW * 0.25, VW * 0.75);
       ctx.translate(fx, 200);
       ctx.scale(this.zoom, this.zoom);
       ctx.translate(-fx, -200);
@@ -325,8 +349,29 @@ export class Renderer {
     ctx.translate(Math.round(shx), Math.round(shy));
 
     // background layers
-    ctx.drawImage(this.A.sky, -8, -8, VW + 16, VH + 16);
-    ctx.drawImage(this.A.far, -Math.round(viewX * 0.5), 0);
+    // sky: native size in the middle (keeps the sun round), its edges
+    // mirrored outwards to fill wider screens without a seam
+    const sky = this.A.sky;
+    const sx = Math.round((VW - sky.width) / 2);
+    ctx.drawImage(sky, -8, -8, VW + 16, VH + 16); // covers shake/zoom overscan
+    ctx.drawImage(sky, sx, 0);
+    if (sx > 0) {
+      ctx.save();
+      ctx.translate(sx, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(sky, 0, 0, sx, VH, 0, 0, sx, VH);
+      ctx.restore();
+      ctx.save();
+      ctx.translate(sx + sky.width, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(sky, sky.width - sx, 0, sx, VH, -sx, 0, sx, VH);
+      ctx.restore();
+    }
+    // far layer scrolls at a fraction of the camera so its edges never show
+    const farSpan = this.A.far.width - VW;
+    const camSpan = 640 - VW;
+    const farX = camSpan > 0 ? -(viewX / camSpan) * farSpan : -farSpan / 2;
+    ctx.drawImage(this.A.far, Math.round(farX), 0);
     if (this.hype > 0) this.hype -= steps;
     const crowdFrame = Math.floor(this.time * (this.hype > 0 ? 10 : 3.5)) % 2;
     ctx.drawImage(this.A.near, 0, crowdFrame * 270, 640, 270, -viewX, 0, 640, 270);
@@ -483,13 +528,14 @@ export class Renderer {
     if (this.screenFlash > 0) {
       ctx.globalAlpha = clamp(this.screenFlash, 0, 1);
       ctx.fillStyle = this.flashColor;
-      ctx.fillRect(0, 0, VW, VH);
+      ctx.fillRect(0, -this.top, VW, this.vh);
       ctx.globalAlpha = 1;
       this.screenFlash -= 0.06 * steps;
     }
   }
 
   drawHud(ctx, v, steps, opts) {
+    const VW = this.vw;
     const F = v.f;
     for (let i = 0; i < 2; i++) {
       const hp = F[i].hp;
@@ -501,7 +547,7 @@ export class Renderer {
       else if (this.trailDelay[i] <= 0) this.trailHp[i] = Math.max(hp, lerp(this.trailHp[i], hp, 0.1 * steps));
     }
 
-    const barW = 176, barH = 10, top = 12;
+    const barW = Math.min(176, VW / 2 - 52), barH = 10, top = 12;
     const drawBar = (i) => {
       const left = i === 0;
       const x0 = left ? 30 : VW - 30 - barW;
@@ -588,19 +634,21 @@ export class Renderer {
   }
 
   drawVs(ctx, v) {
+    const VW = this.vw;
+    const Y0 = -this.top, Y1 = this.vh - this.top;
     const t = v.pt;
     const slide = clamp(1 - t / 16, 0, 1);
     const out = t > VS_TICKS - 12 ? (t - (VS_TICKS - 12)) / 12 : 0;
     ctx.save();
     ctx.globalAlpha = 1 - out;
     ctx.fillStyle = "#120a1c";
-    ctx.fillRect(0, 0, VW, VH);
+    ctx.fillRect(0, Y0, VW, Y1 - Y0);
     // diagonal halves
     const off = slide * 260;
     ctx.fillStyle = v.f[0].c === "lula" ? "#7a1424" : "#145a2e";
-    ctx.beginPath(); ctx.moveTo(-off, 0); ctx.lineTo(VW / 2 + 30 - off, 0); ctx.lineTo(VW / 2 - 30 - off, VH); ctx.lineTo(-off, VH); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-off, Y0); ctx.lineTo(VW / 2 + 30 - off, Y0); ctx.lineTo(VW / 2 - 30 - off, Y1); ctx.lineTo(-off, Y1); ctx.fill();
     ctx.fillStyle = v.f[1].c === "lula" ? "#7a1424" : "#145a2e";
-    ctx.beginPath(); ctx.moveTo(VW + off, 0); ctx.lineTo(VW / 2 + 34 + off, 0); ctx.lineTo(VW / 2 - 26 + off, VH); ctx.lineTo(VW + off, VH); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(VW + off, Y0); ctx.lineTo(VW / 2 + 34 + off, Y0); ctx.lineTo(VW / 2 - 26 + off, Y1); ctx.lineTo(VW + off, Y1); ctx.fill();
     // speed lines
     ctx.strokeStyle = "rgba(255,255,255,0.08)";
     for (let i = 0; i < 18; i++) {
@@ -613,12 +661,12 @@ export class Renderer {
       const meta = this.A.meta[c];
       const fi = meta.tags.idle[0] + (Math.floor(t / 9) % 4);
       ctx.save();
-      const x = i === 0 ? 110 - off : 370 + off;
+      const x = i === 0 ? VW * 0.23 - off : VW * 0.77 + off;
       ctx.translate(x, 236);
       ctx.scale(i === 0 ? 2.4 : -2.4, 2.4);
       ctx.drawImage(this.A[c], fi * meta.frameW, 0, meta.frameW, meta.frameH, -meta.anchorX, -meta.anchorY, meta.frameW, meta.frameH);
       ctx.restore();
-      this.bigText(ctx, CHAR_NAMES[c], i === 0 ? 110 - off : 370 + off, 40, 16, ["#ffffff", "#ffd23c"]);
+      this.bigText(ctx, CHAR_NAMES[c], i === 0 ? VW * 0.23 - off : VW * 0.77 + off, 40, 16, ["#ffffff", "#ffd23c"]);
     }
     const vsScale = t < 20 ? 0 : t < 28 ? 3 - (t - 20) / 4 : 1 + Math.sin(t * 0.3) * 0.05;
     if (vsScale > 0) this.bigText(ctx, "VS", VW / 2 + 2, 150, 40 * vsScale, ["#fff36b", "#ff3a1a"]);

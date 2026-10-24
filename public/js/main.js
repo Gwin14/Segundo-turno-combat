@@ -1,7 +1,7 @@
 import { createMatch, step, rematch, CHAR_NAMES } from "/shared/sim.js";
 import { Renderer } from "./render.js";
 import { initAudio, sfx, playMusic, toggleMute, isMuted, setCrowd } from "./audio.js";
-import { readInput, setEnabled, setupTouch } from "./input.js";
+import { readInput, setEnabled, setupTouch, releaseTouch } from "./input.js";
 import { makeCpu, cpuInput } from "./ai.js";
 
 const $ = (s) => document.querySelector(s);
@@ -12,15 +12,68 @@ const OTHER = { lula: "flavio", flavio: "lula" };
 const TICK = 1 / 60;
 
 // ------------------------------------------------------------------ layout
+// The scene is always 270 logical pixels tall. Its width follows the screen
+// (400..640, the arena width), so the canvas fills the window without bars;
+// on tall screens (portrait phones) the canvas grows taller instead and the
+// extra space holds the touch controls.
+const SCENE_H = 270, MIN_W = 400, MAX_W = 640;
 function fit() {
-  const w = Math.min(window.innerWidth, window.innerHeight * 16 / 9);
-  const h = w * 9 / 16;
-  stageEl.style.width = `${w}px`;
-  stageEl.style.height = `${h}px`;
-  stageEl.style.fontSize = `${Math.max(9, w / 48)}px`;
+  const vv = window.visualViewport;
+  const ww = Math.round(vv ? vv.width * vv.scale : window.innerWidth);
+  const wh = Math.round(vv ? vv.height * vv.scale : window.innerHeight);
+  const aspect = ww / wh;
+  let W, H, sw = ww, sh = wh;
+  if (aspect >= MIN_W / SCENE_H) {
+    H = SCENE_H;
+    W = Math.min(MAX_W, Math.round(SCENE_H * aspect));
+    if (aspect > MAX_W / SCENE_H) sw = Math.round(wh * MAX_W / SCENE_H); // ultra-wide: thin side bars
+  } else {
+    W = MIN_W;
+    H = Math.round(MIN_W / aspect);
+  }
+  if (canvas.width !== W || canvas.height !== H) {
+    canvas.width = W;
+    canvas.height = H;
+  }
+  if (R) R.resize(W, H);
+  stageEl.style.width = `${sw}px`;
+  stageEl.style.height = `${sh}px`;
+  stageEl.style.fontSize = `${Math.max(9, (sw / W) * 10)}px`;
+  document.documentElement.classList.toggle("portrait", H > SCENE_H);
 }
 window.addEventListener("resize", fit);
-fit();
+window.addEventListener("orientationchange", () => setTimeout(fit, 200));
+if (window.visualViewport) window.visualViewport.addEventListener("resize", fit);
+
+// Block pinch and double-tap zoom: iOS Safari ignores user-scalable=no, and a
+// zoomed page has no way back since nothing scrolls.
+for (const ev of ["gesturestart", "gesturechange", "gestureend"]) {
+  document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
+}
+document.addEventListener("touchmove", (e) => {
+  if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault();
+}, { passive: false });
+let lastTouchEnd = 0;
+document.addEventListener("touchend", (e) => {
+  const now = Date.now();
+  const onControl = e.target.closest && e.target.closest("button, input, .card, #touch");
+  if (now - lastTouchEnd < 350 && !onControl) e.preventDefault();
+  lastTouchEnd = now;
+}, { passive: false });
+document.addEventListener("dblclick", (e) => e.preventDefault(), { passive: false });
+
+// On phones, go fullscreen (and landscape where allowed) when a fight starts.
+function enterFullscreen() {
+  if (!document.documentElement.classList.contains("touch")) return;
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (req && !document.fullscreenElement && !document.webkitFullscreenElement) {
+    try {
+      const p = req.call(el, { navigationUI: "hide" });
+      if (p && p.then) p.then(() => screen.orientation?.lock?.("landscape").catch(() => {})).catch(() => {});
+    } catch {}
+  }
+}
 
 // ------------------------------------------------------------------ assets
 function loadImage(src) {
@@ -82,6 +135,7 @@ function attractView(t) {
 
 function setPlaying(on) {
   setEnabled(on);
+  if (!on) releaseTouch();
   $("#touch").classList.toggle("playing", on);
   $("#btn-menu").classList.toggle("hidden", !on);
 }
@@ -252,6 +306,7 @@ function onNet(m) {
 async function onlineAction(msg) {
   initAudio();
   sfx.confirm();
+  enterFullscreen();
   try {
     await connect();
     send(msg);
@@ -371,7 +426,7 @@ function wire() {
     cpuLevel = c.dataset.level;
     $$(".chip").forEach((x) => x.classList.toggle("on", x === c));
   }));
-  $("#btn-cpu-go").onclick = () => { initAudio(); sfx.confirm(); startLocal(); };
+  $("#btn-cpu-go").onclick = () => { initAudio(); sfx.confirm(); enterFullscreen(); startLocal(); };
   $("#btn-create").onclick = () => onlineAction({ t: "create", char: pickedChar });
   $("#btn-quick").onclick = () => onlineAction({ t: "quick", char: pickedChar });
   $("#btn-join").onclick = () => {
@@ -432,9 +487,11 @@ function togglePause(force) {
 
 // ------------------------------------------------------------------ boot
 (async function boot() {
+  fit();
   A = await loadAssets();
   R = new Renderer(canvas, A);
   wire();
+  fit();
   goTitle();
   requestAnimationFrame(frame);
 })();

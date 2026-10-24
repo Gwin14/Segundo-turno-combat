@@ -13,11 +13,17 @@
   --panel: rgba(18, 10, 28, 0.82);
 }
 
-* { box-sizing: border-box; }
+* { box-sizing: border-box; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 
 html, body {
   margin: 0;
   height: 100%;
+  position: fixed;
+  inset: 0;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-touch-callout: none;
   background: #0b0612;
   color: #fff;
   font-family: "Press Start 2P", monospace;
@@ -32,7 +38,7 @@ html, body {
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  /* width/height + font-size are set from JS to keep 16:9 */
+  /* width/height + font-size are set from JS (see fit() in main.js) */
   font-size: 16px;
 }
 
@@ -118,6 +124,7 @@ p { margin: 0; font-size: 0.6em; line-height: 1.7; text-shadow: 0.15em 0.15em 0 
 .hidden { display: none !important; }
 
 input {
+  font-size: max(16px, 0.62em);
   background: #120a1c;
   cursor: text;
   width: 8em;
@@ -177,35 +184,67 @@ input {
 #btn-menu { left: 3.4em; }
 
 /* ---------------------------------------------------------------- touch */
-#touch { display: none; position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+/* Sized in real pixels (not em) so they stay finger-sized on any screen. */
+#touch {
+  --cell: clamp(42px, 12vmin, 64px);
+  --ab: clamp(54px, 15vmin, 80px);
+  --pad: max(10px, env(safe-area-inset-bottom));
+  display: none;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+}
 #touch.show.playing { display: block; }
-#touch .dpad, #touch .abtns { pointer-events: auto; position: absolute; bottom: 0.6em; touch-action: none; }
+#touch .dpad, #touch .abtns {
+  pointer-events: auto;
+  position: absolute;
+  bottom: var(--pad);
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
 #touch .dpad {
-  left: 0.6em;
+  left: max(10px, env(safe-area-inset-left));
   display: grid;
-  grid-template-columns: repeat(3, 3.2em);
-  grid-template-rows: repeat(3, 3.2em);
+  grid-template-columns: repeat(3, var(--cell));
+  grid-template-rows: repeat(3, var(--cell));
 }
 #touch .dpad .arrow {
-  background: rgba(255, 255, 255, 0.14);
-  border: 0.12em solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.16);
+  border: 2px solid rgba(255, 255, 255, 0.35);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.9em;
-  border-radius: 0.4em;
+  font-size: calc(var(--cell) * 0.36);
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.85);
 }
-#touch .abtns { right: 0.6em; display: flex; gap: 0.5em; align-items: flex-end; }
+#touch .abtns {
+  right: max(10px, env(safe-area-inset-right));
+  display: grid;
+  grid-template-columns: repeat(2, var(--ab));
+  grid-template-rows: repeat(2, var(--ab));
+  gap: 10px;
+}
 #touch .ab {
-  width: 4.4em;
-  height: 4.4em;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.5em;
-  border: 0.2em solid rgba(255, 255, 255, 0.4);
+  font-size: calc(var(--ab) * 0.17);
+  border: 3px solid rgba(255, 255, 255, 0.45);
+  text-shadow: 2px 2px 0 var(--ink);
 }
-#touch .ab.p { background: rgba(224, 48, 44, 0.45); }
-#touch .ab.k { background: rgba(42, 68, 160, 0.5); margin-bottom: 2em; }
-#touch .ab.s { background: rgba(255, 210, 60, 0.45); }
+#touch .ab.k { grid-column: 2; grid-row: 1; background: rgba(42, 68, 160, 0.55); }
+#touch .ab.p { grid-column: 1; grid-row: 2; background: rgba(224, 48, 44, 0.5); }
+#touch .ab.s { grid-column: 2; grid-row: 2; background: rgba(255, 210, 60, 0.5); }
+#touch .on { filter: brightness(1.8); transform: scale(0.93); border-color: #fff; }
+
+/* tall screens: the controls sit in the panel under the scene, bigger */
+.portrait #touch { --cell: clamp(44px, 15vw, 76px); --ab: clamp(56px, 19vw, 92px); --pad: max(24px, env(safe-area-inset-bottom)); }
+
+/* side buttons stay clear of the notch */
+#btn-mute { left: max(0.6em, env(safe-area-inset-left)); }
+.touch #btn-mute, .touch #btn-menu { bottom: auto; top: 4.4em; }
+.portrait.touch #btn-mute, .portrait.touch #btn-menu { top: max(0.6em, env(safe-area-inset-top)); }

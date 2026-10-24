@@ -43,28 +43,29 @@ def build_sky():
 
 
 # ------------------------------------------------------------------ Congresso Nacional
+MINISTRIES = (10, 70, 130, 190, 406, 466, 526, 586)
 def build_far():
-    W, H = 560, 270
+    W, H = 640, 270
     p = os.path.join(SRC, "far.aseprite")
     new_sprite(p, W, H, layer="city")
     sil, sil2, lit, win = "#4b2c5e", "#3a2150", "#e58c80", "#ffd27a"
     # distant hills
     call(drawing.draw_polygon(p, "city", 1, pts((0, 200), (60, 186), (140, 192), (220, 182), (300, 190),
-                                                 (380, 180), (470, 190), (560, 184), (560, 214), (0, 214)),
+                                                 (380, 180), (470, 190), (560, 184), (640, 190), (640, 214), (0, 214)),
                               "#5e3768", True))
     # Esplanada ministries: long low blocks on both sides with lit windows
-    for bx in (10, 70, 130, 400, 460, 520):
+    for bx in MINISTRIES:
         call(drawing.draw_rectangle_at(p, "city", 1, bx, 176, 44, 30, sil2, True))
         call(drawing.draw_line_at(p, "city", 1, bx, 176, bx + 43, 176, lit, 1))
     # windows in one draw_rows pass (fast)
     wins = {}
-    for bx in (10, 70, 130, 400, 460, 520):
+    for bx in MINISTRIES:
         for wy in range(180, 204, 5):
             for wx in range(bx + 3, bx + 42, 4):
                 if random.random() < 0.4:
                     wins[(wx, wy)] = "Y"; wins[(wx + 1, wy)] = "Y"
     draw_grid(p, "city", 1, wins, W, H, {"Y": win})
-    cx = 280
+    cx = W // 2
     # main horizontal platform
     call(drawing.draw_rectangle_at(p, "city", 1, cx - 120, 182, 240, 14, sil, True))
     call(drawing.draw_line_at(p, "city", 1, cx - 120, 182, cx + 119, 182, lit, 1))

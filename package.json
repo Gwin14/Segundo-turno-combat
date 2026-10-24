@@ -6,6 +6,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "dev": "node --watch server.js",
     "art": "tools/aseprite-mcp/.venv/bin/python art/characters.py && tools/aseprite-mcp/.venv/bin/python art/scenery.py"
   },
   "engines": {
