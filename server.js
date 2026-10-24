@@ -15,6 +15,17 @@ const MIME = {
   ".png": "image/png", ".json": "application/json", ".ico": "image/x-icon", ".svg": "image/svg+xml", ".woff2": "font/woff2",
 };
 
+// Public origin for absolute URLs in the Open Graph tags (scrapers need them).
+// PUBLIC_URL pins it (e.g. a custom domain); otherwise it comes from the
+// request, honouring the proxy headers Render & co. set.
+function publicOrigin(req) {
+  if (process.env.PUBLIC_URL) return process.env.PUBLIC_URL.replace(/\/+$/, "");
+  const first = (v) => String(v || "").split(",")[0].trim();
+  const proto = first(req.headers["x-forwarded-proto"]) === "https" ? "https" : req.socket.encrypted ? "https" : "http";
+  const host = first(req.headers["x-forwarded-host"]) || first(req.headers.host);
+  return /^[a-z0-9.-]+(:\d+)?$/i.test(host) ? `${proto}://${host}` : `http://localhost:${PORT}`;
+}
+
 const server = createServer(async (req, res) => {
   try {
     let path = decodeURIComponent(new URL(req.url, "http://x").pathname);
@@ -24,8 +35,10 @@ const server = createServer(async (req, res) => {
     if (!file.startsWith(normalize(base))) throw new Error("bad path");
     const info = await stat(file);
     if (!info.isFile()) throw new Error("not a file");
+    let body = await readFile(file);
+    if (path === "/index.html") body = body.toString().replaceAll("__ORIGIN__", publicOrigin(req));
     res.writeHead(200, { "Content-Type": MIME[extname(file)] || "application/octet-stream", "Cache-Control": "no-cache" });
-    res.end(await readFile(file));
+    res.end(body);
   } catch {
     res.writeHead(404, { "Content-Type": "text/plain" });
     res.end("404");
