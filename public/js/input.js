@@ -17,6 +17,16 @@ let pressed = 0;
 let prevPad = 0;
 export let enabled = false;
 
+// Reports the first use of each control type (for analytics).
+let reporter = null;
+const reported = new Set();
+export function onControlUsed(fn) { reporter = fn; }
+function used(kind) {
+  if (reported.has(kind)) return;
+  reported.add(kind);
+  if (reporter) reporter(kind);
+}
+
 export function setEnabled(v) {
   enabled = v;
   if (!v) { keyHeld = 0; touchHeld = 0; pressed = 0; }
@@ -27,6 +37,7 @@ window.addEventListener("keydown", (e) => {
   if (!b || !enabled) return;
   if (document.activeElement && document.activeElement.tagName === "INPUT") return;
   e.preventDefault();
+  used("teclado");
   if (!(keyHeld & b)) pressed |= b;
   keyHeld |= b;
 });
@@ -58,6 +69,7 @@ function padState() {
 export function readInput() {
   if (!enabled) return { h: 0, p: 0 };
   const pad = padState();
+  if (pad) used("gamepad");
   pressed |= pad & ~prevPad;
   prevPad = pad;
   const h = keyHeld | touchHeld | pad;
@@ -96,6 +108,7 @@ export function setupTouch(root) {
   };
   const track = (e) => {
     e.preventDefault();
+    used("toque");
     for (const t of e.changedTouches) active.set(t.identifier, keyAt(t.clientX, t.clientY));
     recompute();
   };

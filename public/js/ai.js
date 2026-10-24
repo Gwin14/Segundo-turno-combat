@@ -8,7 +8,7 @@ const LEVELS = {
 };
 
 export function makeCpu(level = "normal") {
-  return { L: LEVELS[level] || LEVELS.normal, t: 0, hold: 0, press: 0, jumpAtk: false };
+  return { level, L: LEVELS[level] || LEVELS.normal, t: 0, hold: 0, press: 0, jumpAtk: false };
 }
 
 export function cpuInput(cpu, S, i) {

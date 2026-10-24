@@ -171,6 +171,8 @@
     <button id="btn-mute" title="Som (M)">♪</button>
     <button id="btn-menu" class="hidden" title="Pausa (Esc)">II</button>
   </div>
+  <!-- PostHog config, filled in by server.js from POSTHOG_* env vars -->
+  <script>window.__PH__ = __PH_CONFIG__;</script>
   <script type="module" src="/js/main.js"></script>
 </body>
 </html>

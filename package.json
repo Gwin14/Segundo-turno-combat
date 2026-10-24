@@ -13,6 +13,8 @@
     "node": ">=18"
   },
   "dependencies": {
+    "posthog-js": "^1.438.21",
+    "posthog-node": "^5.57.1",
     "ws": "^8.22.0"
   }
 }

@@ -1,8 +1,9 @@
 import { createMatch, step, rematch, CHAR_NAMES } from "/shared/sim.js";
 import { Renderer } from "./render.js";
 import { initAudio, sfx, playMusic, toggleMute, isMuted, setCrowd } from "./audio.js";
-import { readInput, setEnabled, setupTouch, releaseTouch } from "./input.js";
+import { readInput, setEnabled, setupTouch, releaseTouch, onControlUsed } from "./input.js";
 import { makeCpu, cpuInput } from "./ai.js";
+import { initAnalytics, track, distinctId } from "./analytics.js";
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -198,7 +199,8 @@ function openSelect(m) {
 // ------------------------------------------------------------------ local (CPU)
 function startLocal() {
   const chars = [pickedChar, OTHER[pickedChar]];
-  local = { S: createMatch(chars), cpu: makeCpu(cpuLevel), acc: 0 };
+  local = { S: createMatch(chars), cpu: makeCpu(cpuLevel), acc: 0, startedAt: Date.now() };
+  track("treino iniciado", { lutador: pickedChar, oponente: chars[1], dificuldade: cpuLevel });
   mode = "local";
   paused = false;
   R.reset();
@@ -214,9 +216,21 @@ function updateLocal(dt) {
     local.acc -= TICK;
     const S = local.S;
     step(S, [readInput(), cpuInput(local.cpu, S, 1)]);
-    for (const e of S.ev) R.onEvent(e, S);
+    for (const e of S.ev) {
+      R.onEvent(e, S);
+      if (e.t === "matchwin") trackLocalEnd(e.p);
+    }
     S.ev = [];
   }
+}
+
+function trackLocalEnd(winner) {
+  const S = local.S;
+  track("treino terminado", {
+    lutador: S.f[0].c, oponente: S.f[1].c, dificuldade: local.cpu.level,
+    resultado: winner < 0 ? "empate" : winner === 0 ? "vitoria" : "derrota",
+    placar: `${S.f[0].w}x${S.f[1].w}`, rounds: S.rd, duracao_s: Math.round((Date.now() - local.startedAt) / 1000),
+  });
 }
 
 // ------------------------------------------------------------------ online
@@ -228,14 +242,17 @@ function connect() {
   return new Promise((res, rej) => {
     if (online && online.ws.readyState === 1) return res(online);
     const ws = new WebSocket(wsUrl());
-    online = { ws, buf: [], rt: -1, you: 0, lastSent: -1, lastSendT: 0, ping: null, processed: 0, chars: null, rematchSent: false };
+    online = { ws, buf: [], rt: -1, you: 0, lastSent: -1, lastSendT: 0, ping: null, pings: [], processed: 0, chars: null, rematchSent: false };
     ws.onopen = () => res(online);
     ws.onerror = () => rej(new Error("Falha na conexão"));
     ws.onclose = () => {
       if (online && online.ws === ws) {
         const wasPlaying = mode === "online";
         online = null;
-        if (wasPlaying) message("CONEXÃO PERDIDA", "A conexão com o servidor caiu.");
+        if (wasPlaying) {
+          track("conexao perdida", { tela: "partida" });
+          message("CONEXÃO PERDIDA", "A conexão com o servidor caiu.");
+        }
       }
     };
     ws.onmessage = (m) => onNet(JSON.parse(m.data));
@@ -273,6 +290,7 @@ function onNet(m) {
       break;
     case "start":
       mode = "online";
+      online.pings = [];
       online.buf = [];
       online.rt = -1;
       online.rematchSent = false;
@@ -285,10 +303,12 @@ function onNet(m) {
     case "s":
       if (mode !== "online") break;
       online.buf.push(m.s);
+      if (m.s.ev.some((e) => e.t === "matchwin")) trackLatency();
       if (online.buf.length > 90) online.buf.splice(0, online.buf.length - 90);
       break;
     case "pong":
       online.ping = Math.round(performance.now() - m.ts);
+      if (mode === "online") online.pings.push(online.ping);
       break;
     case "rematch":
       if (m.who !== online.you) $("#end-status").textContent = "O oponente quer revanche!";
@@ -298,19 +318,34 @@ function onNet(m) {
       message("OPONENTE SAIU", "Seu oponente desconectou da partida.");
       break;
     case "err":
+      track("erro online", { mensagem: m.msg });
       message("OPS", m.msg, () => openSelect("online"));
       break;
   }
 }
 
-async function onlineAction(msg) {
+// Round-trip time over the match, from the 2s pings.
+function trackLatency() {
+  const p = online.pings;
+  if (!p.length) return;
+  const sorted = [...p].sort((a, b) => a - b);
+  track("latencia medida", {
+    ping_medio: Math.round(p.reduce((a, b) => a + b, 0) / p.length),
+    ping_p95: sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))],
+    ping_max: sorted[sorted.length - 1], amostras: p.length,
+  });
+}
+
+async function onlineAction(msg, action) {
   initAudio();
   sfx.confirm();
   enterFullscreen();
+  track("acao online", { acao: action, lutador: msg.char || null });
   try {
     await connect();
-    send(msg);
+    send({ ...msg, pid: distinctId() });
   } catch {
+    track("conexao perdida", { tela: "menu" });
     message("SEM CONEXÃO", "Não foi possível conectar ao servidor do jogo.");
   }
 }
@@ -415,40 +450,57 @@ function wire() {
   window.addEventListener("pointerdown", unlock, { once: false });
   window.addEventListener("keydown", unlock, { once: false });
 
-  $("#btn-online").onclick = () => { initAudio(); sfx.confirm(); playMusic("menu"); openSelect("online"); };
-  $("#btn-cpu").onclick = () => { initAudio(); sfx.confirm(); playMusic("menu"); openSelect("cpu"); };
+  $("#btn-online").onclick = () => { initAudio(); sfx.confirm(); playMusic("menu"); track("modo escolhido", { modo: "online" }); openSelect("online"); };
+  $("#btn-cpu").onclick = () => { initAudio(); sfx.confirm(); playMusic("menu"); track("modo escolhido", { modo: "treino" }); openSelect("cpu"); };
   $("#btn-help").onclick = () => { initAudio(); sfx.blip(); show("scr-help"); };
   $$(".back-title").forEach((b) => (b.onclick = () => { sfx.blip(); goTitle(); }));
   $$(".back").forEach((b) => (b.onclick = () => { sfx.blip(); goTitle(); }));
-  $$(".card").forEach((c) => (c.onclick = () => { initAudio(); sfx.blip(); pickChar(c.dataset.char); }));
+  $$(".card").forEach((c) => (c.onclick = () => {
+    initAudio();
+    sfx.blip();
+    pickChar(c.dataset.char);
+    track("lutador escolhido", { lutador: c.dataset.char, modo: selectMode === "cpu" ? "treino" : "online" });
+  }));
   $$(".chip").forEach((c) => (c.onclick = () => {
     sfx.blip();
     cpuLevel = c.dataset.level;
+    track("dificuldade escolhida", { dificuldade: cpuLevel });
     $$(".chip").forEach((x) => x.classList.toggle("on", x === c));
   }));
   $("#btn-cpu-go").onclick = () => { initAudio(); sfx.confirm(); enterFullscreen(); startLocal(); };
-  $("#btn-create").onclick = () => onlineAction({ t: "create", char: pickedChar });
-  $("#btn-quick").onclick = () => onlineAction({ t: "quick", char: pickedChar });
+  $("#btn-create").onclick = () => onlineAction({ t: "create", char: pickedChar }, "criar_sala");
+  $("#btn-quick").onclick = () => onlineAction({ t: "quick", char: pickedChar }, "partida_rapida");
   $("#btn-join").onclick = () => {
     const code = $("#code-in").value.trim().toUpperCase();
     if (code.length !== 4) { sfx.block(); return; }
-    onlineAction({ t: "join", code });
+    onlineAction({ t: "join", code }, "entrar_codigo");
   };
   $("#code-in").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#btn-join").click(); });
-  $("#btn-joinlink").onclick = () => onlineAction({ t: "join", code: urlRoom.toUpperCase() });
+  $("#btn-joinlink").onclick = () => onlineAction({ t: "join", code: urlRoom.toUpperCase() }, "entrar_link");
   $("#btn-copy").onclick = async () => {
     sfx.confirm();
+    track("convite copiado", { codigo: online && online.code });
     try { await navigator.clipboard.writeText($("#room-link").value); $("#btn-copy").textContent = "COPIADO!"; }
     catch { $("#room-link").select(); }
     setTimeout(() => ($("#btn-copy").textContent = "COPIAR"), 1500);
   };
   $$(".cancel").forEach((b) => (b.onclick = () => { sfx.blip(); leaveOnline(); openSelect("online"); }));
   $("#btn-resume").onclick = () => togglePause(false);
-  $$(".quit").forEach((b) => (b.onclick = () => { sfx.blip(); endShown = false; goTitle(); }));
+  $$(".quit").forEach((b) => (b.onclick = () => {
+    sfx.blip();
+    if (mode === "local" && local && local.S.ph !== "end") {
+      track("treino abandonado", { lutador: local.S.f[0].c, dificuldade: local.cpu.level, round: local.S.rd,
+        duracao_s: Math.round((Date.now() - local.startedAt) / 1000) });
+    }
+    endShown = false;
+    goTitle();
+  }));
   $("#btn-rematch").onclick = () => {
     sfx.confirm();
+    track("revanche pedida", { modo: mode === "local" ? "treino" : "online" });
     if (mode === "local") {
       rematch(local.S);
+      local.startedAt = Date.now();
       R.reset();
       endShown = false;
       hideScreens();
@@ -462,7 +514,13 @@ function wire() {
   };
   const muteBtn = $("#btn-mute");
   muteBtn.classList.toggle("off", isMuted());
-  muteBtn.onclick = () => { initAudio(); muteBtn.classList.toggle("off", toggleMute()); muteBtn.blur(); };
+  muteBtn.onclick = () => {
+    initAudio();
+    const muted = toggleMute();
+    muteBtn.classList.toggle("off", muted);
+    muteBtn.blur();
+    track("som alternado", { mudo: muted });
+  };
   $("#btn-menu").onclick = () => togglePause();
 
   window.addEventListener("keydown", (e) => {
@@ -492,6 +550,14 @@ function togglePause(force) {
   R = new Renderer(canvas, A);
   wire();
   fit();
+  const touch = document.documentElement.classList.contains("touch");
+  initAnalytics({ dispositivo: touch ? "toque" : "desktop" });
+  onControlUsed((tipo) => track("controle usado", { tipo, modo: mode === "local" ? "treino" : "online" }));
+  track("jogo carregado", {
+    via_convite: !!urlRoom, orientacao: canvas.height > canvas.width ? "retrato" : "paisagem",
+    resolucao: `${canvas.width}x${canvas.height}`, largura_tela: window.innerWidth, altura_tela: window.innerHeight,
+    idioma: navigator.language,
+  });
   goTitle();
   requestAnimationFrame(frame);
 })();

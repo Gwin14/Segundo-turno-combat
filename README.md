@@ -6,7 +6,7 @@ Jogo de luta 2D multiplayer online que roda no navegador. Lula contra Flávio, s
 
 ```bash
 npm install
-npm start
+npm run dev
 ```
 
 Abra http://localhost:3000. Para testar o online sozinho, abra duas abas: crie a sala em uma e entre pelo link (ou código) na outra.
@@ -54,6 +54,25 @@ npm run art
 
 O `.mcp.json` registra o aseprite-mcp como servidor MCP do projeto, para editar a arte de forma interativa pelo Claude Code.
 
+## Analytics (PostHog)
+
+Os eventos vão para o PostHog quando `POSTHOG_PROJECT_TOKEN` e `POSTHOG_HOST` estão definidas (localmente no `.env`, veja `.env.example`). Sem elas, o jogo roda normalmente e não envia nada.
+
+Todo evento leva `app: "segundo-turno"` (o projeto do PostHog é compartilhado com outros apps) e `ambiente: "dev"` ou `"prod"`.
+
+- **Servidor** (`analytics.js`, fatos da partida): `sala criada`, `sala entrou`, `sala preenchida`, `sala cancelada`, `sala abandonada`, `sala entrada falhou`, `partida rapida na fila`, `partida rapida pareada`, `partida rapida cancelada`, `partida online iniciada`, `round terminado`, `partida online terminada` (resultado, placar, golpes, combo, especiais...), `oponente saiu`, `servidor status` (a cada 5 min).
+- **Navegador** (`public/js/analytics.js`): `jogo carregado`, `modo escolhido`, `lutador escolhido`, `dificuldade escolhida`, `treino iniciado`, `treino terminado`, `treino abandonado`, `acao online`, `convite copiado`, `revanche pedida`, `controle usado`, `som alternado`, `latencia medida`, `conexao perdida`, `erro online`.
+
+O navegador gera um ID anônimo e o manda ao servidor, para que os eventos dos dois lados caiam na mesma pessoa. O SDK do navegador (`posthog-js`) é servido pelo próprio servidor em `/vendor/posthog.js`, com a versão fixada pelo `package-lock.json`.
+
 ## Deploy
 
 Qualquer host Node com suporte a WebSocket serve (Render, Railway, Fly.io, uma VPS). O servidor usa a variável `PORT`. Comando de start: `npm start`. Em HTTPS o cliente usa `wss://` automaticamente.
+
+Variáveis de ambiente no host:
+
+| Variável | Para quê |
+|---|---|
+| `POSTHOG_PROJECT_TOKEN` | Chave pública do projeto no PostHog (liga o analytics) |
+| `POSTHOG_HOST` | `https://us.i.posthog.com` |
+| `PUBLIC_URL` | Opcional: domínio fixo para as URLs do Open Graph |
